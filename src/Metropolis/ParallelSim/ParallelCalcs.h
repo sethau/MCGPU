@@ -2,10 +2,6 @@
 	Declares ParallellCalcs methods accessed from C++ compiled code (no Cuda).
 
 	Created: February 21, 2014
-	
-	-> February 26, by Albert Wallace
-	-> March 28, by Joshua Mosby
-	-> April 21, by Nathan Coleman
 */
 
 #ifndef PARALLELCALCS_H

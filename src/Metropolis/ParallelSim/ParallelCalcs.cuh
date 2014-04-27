@@ -1,11 +1,5 @@
 /*
 	Contains the methods required to calculate energies in parallel.
-
-	Created: February 21, 2014
-	
-	-> February 26, by Albert Wallace
-	-> March 28, by Joshua Mosby
-	-> April 21, by Nathan Coleman
 */
 
 #ifndef PARALLELCALCS_CUH
@@ -18,6 +12,14 @@
 
 namespace ParallelCalcs
 {
+	const static int MAX_PAR_STEPS = 8;
+	
+	/// Calculates the molecular energy contributions for each
+	///   changed molecule in pBox.
+	/// @param pBox A pointer to the ParallelBox with changed
+	///   molecules already chosen and changed.
+	/// @return Returns a pointer to the array of energy contributions.
+	Real* calcMolecularEnergyContributions(ParallelBox pBox);
 	
 	/// Creates a batch of molecule IDs within the cutoff distance of
 	///   the chosen molecule, and returns the batch size.

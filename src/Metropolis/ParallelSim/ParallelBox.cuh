@@ -3,10 +3,6 @@
 	Subclass of Box.
 
 	Created: February 21, 2014
-	
-	-> February 26, by Albert Wallace
-	-> March 28, by Joshua Mosby
-	-> April 21, by Nathan Coleman
 */
 
 #ifndef PARALLELBOX_H
@@ -21,6 +17,12 @@ class ParallelBox : public Box
 	private:
 		Real *xD, *yD, *zD, *sigmaD, *epsilonD, *chargeD;
 		int *atomsIdxD, *numOfAtomsD;
+		int nextChangeIdx;
+		
+		/// Saves the specified molecule in the backup array,
+		///   changedMols.
+		/// @param molIdx The index of the molecule to be saved.
+		virtual void saveChangedMol(int molIdx);
 		
 		/// Copies a specified molecule and all of its atoms
 		///   over to the device. Called after changing a
@@ -29,7 +31,7 @@ class ParallelBox : public Box
 		void writeChangeToDevice(int changeIdx);
 
 	public:
-		int *changedIndices, numChanged;
+		int *changedIndices, numChanged, nextMol;
 		Molecule *changedMols;
 		AtomData *atomsH, *atomsD;
 		Environment *environmentD;
@@ -44,10 +46,28 @@ class ParallelBox : public Box
 		/// Chooses N random molecules to be changed for a given
 		///   batch of parallel simulation steps.
 		/// @param N The number of molecules to be chosen.
-		void chooseMolecules(int N);
+		/// @return Returns the number of molecules actually chosen.
+		/// @note If the same molecule is chosen twice in the same
+		///   batch, the batch is stopped before duplicate insertion,
+		///   and the duplicate is stored to be inserted first into
+		///   the next batch.
+		void chooseMolecules(const int N);
 		
-		/// Changes all changed molecules in a random way.
+		/// Changes all chosen molecules in a random way.
+		///   Also saves the backups in changedMols.
 		void changeMolecules();
+		
+		/// Instantiates the atom, bond, dihedral, angle, and hop arrays
+		///   of a given Molecule.
+		/// @param mol A pointer to the Molecule.
+		/// @paramsourceMol A pointer to the Molecule whose member array
+		///   sizes will be used for dimensioning.
+		void createMolMemberArrays(Molecule *mol, Molecule *sourceMol);
+		
+		/// Deletes the atom, bond, dihedral, angle, and hop arrays
+		///   of a given Molecule.
+		/// @param mol A pointer to the Molecule.
+		void deleteMolMemberArrays(Molecule *mol, Molecule *sourceMol);
 		
 		/// Given two indices in the changedIndices array,
 		///   check the distance against the cutoff.
@@ -60,8 +80,8 @@ class ParallelBox : public Box
 		/// Given one index in the changedIndices array,
 		///   toggle the status of the molecule between
 		///   changed and rolled-back, using the backups.
-		/// @param molIdx The index to be toggled.
-		void toggleChange(int molIdx);
+		/// @param changeIdx The index to be toggled.
+		void toggleChange(int changeIdx);
 		
 		/// Changes a specified molecule in a random way.
 		///   This method overrides the virtual method of the

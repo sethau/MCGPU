@@ -1,26 +1,137 @@
 /*
 	Implements methods related to managing data between the host and device.
 	Subclass of Box.
-
-	Created: February 21, 2014
-	
-	-> February 26, by Albert Wallace
-	-> March 28, by Joshua Mosby
-	-> April 21, by Nathan Coleman
 */
 
 #include "ParallelBox.cuh"
+#include "ParallelCalcs.cuh"
 
 using namespace std;
 
 ParallelBox::ParallelBox(): Box()
 {
-	//Is anything really needed here?
+	nextMol = 0;
+	numChanged = 0;
 }
 
 ParallelBox::~ParallelBox()
 {
 	// TODO: free device memory
+}
+
+int ParallelBox::chooseMolecules(const int N)
+{
+	if (changedIndices == NULL || changedMols == NULL)
+	{
+		changedIndices = new int[N];
+		changedMols = new Molecule[N];
+	}
+	
+	if (N > 0)
+	{
+		int i = 0, j;
+		
+		//if the size needs to change
+		if (numChanged != N)
+		{
+			delete[] changedIndices;
+			delete[] changedMols;
+			changedIndices = new int[N];
+			changedMols = new Molecule[N];
+			numChanged = N;
+		}
+		
+		//if the next molecule has already been chosen
+		if (nextMol != 0)
+		{
+			changedIndices[i++] = nextMol;
+			nextMol = 0;
+		}
+		
+		for (i = i; i < N; i++)
+		{
+			nextMol = chooseMolecule();
+			
+			//make sure this molecule is not already in the batch
+			for (j = 0; j < i; j++)
+			{
+				//if this molecule is already in the batch,
+				//stop here and start with this molecule next time
+				if (changedIndices[j] == nextMol)
+				{
+					numChanged = i;
+					return numChanged;
+				}
+			}
+			changedIndices[i] = nextMol;
+		}
+		//if batch had no duplicates, reset nextMol to 0
+		nextMol = 0;
+		return N;
+	}
+	else
+	{
+		return 0;
+	}
+}
+
+void ParallelBox::changeMolecules()
+{
+	for (nextChangeIdx = 0; nextChangeIdx < numChanged; nextChangeIdx++)
+	{
+		changeMolecule(changedIndices[nextChangeIdx]);
+	}
+}
+
+void ParallelBox::saveChangedMol(int molIdx)
+{
+	Molecule *sourceMol = &molecules[molIdx];
+
+	//free memory of changedMol before allocate memory
+	deleteMolMemberArrays(changedMols + nextChangeIdx);
+
+	memcpy(changedMols + nextChangeIdx, sourceMol, sizeof(Molecule));
+
+	createMolMemberArrays(changedMols + nextChangeIdx, sourceMol);
+
+	copyMolecule(changedMols + nextChangeIdx, sourceMol);
+}
+
+void ParallelBox::createMolMemberArrays(Molecule *mol, Molecule *sourceMol)
+{
+	mol->atoms = new Atom[sourceMol->numOfAtoms];
+	mol->bonds = new Bond[sourceMol->numOfBonds];
+	mol->angles = new Angle[sourceMol->numOfAngles];
+	mol->dihedrals = new Dihedral[sourceMol->numOfDihedrals];
+	mol->hops = new Hop[sourceMol->numOfHops];
+}
+
+void ParallelBox::deleteMolMemberArrays(Molecule *mol)
+{
+	delete[] mol->atoms;
+	delete[] mol->bonds;
+	delete[] mol->angles;
+	delete[] mol->dihedrals;
+	delete[] mol->hops;
+}
+
+void ParallelBox::toggleChange(int changeIdx)
+{
+	//create temporary copy of backup Molecule
+	Molecule *backupMol = (Molecule*) malloc(sizeof(Molecule));
+	createMolMemberArrays(backupMol, changedMols[changeIdx]);
+	copyMolecule(backupMol, changedMols + changeIdx);
+	
+	//save working copy
+	nextChangeIdx = changeIdx;
+	saveChangedMol(changedIndices[changeIdx]);
+	nextChangeIdx = 0;
+	
+	//overwrite working copy with backup
+	copyMolecule(molecules + changedIndices[changeIdx], backupMol);
+	
+	//de-allocate temporary copy of backup
+	deleteMolMemberArrays(backupMol);
 }
 
 int ParallelBox::changeMolecule(int molIdx)
@@ -83,6 +194,10 @@ void ParallelBox::copyDataToDevice()
 	cudaMalloc(&moleculesD, sizeof(MoleculeData));
 	cudaMemcpy(moleculesD, tempMD, sizeof(MoleculeData), cudaMemcpyHostToDevice);
 	
+	/***********************************************************************
+		Without Parallel Steps
+	************************************************************************
+	
 	//data structures for neighbor batch in energy calculation
 	nbrMolsH = (int*) malloc(moleculeCount * sizeof(int));
 	molBatchH = (int*) malloc(moleculeCount * sizeof(int));
@@ -104,6 +219,38 @@ void ParallelBox::copyDataToDevice()
 	//possible interatomic energies for one pair of molecules
 	energyCount = moleculesH->moleculeCount * maxMolSize * maxMolSize;
 	cudaMalloc(&(energiesD), energyCount * sizeof(Real));
+	
+	************************************************************************
+		Without Parallel Steps
+	***********************************************************************
+		With Parallel Steps
+	***********************************************************************/
+	
+	//data structures for neighbor batch in energy calculation
+	nbrMolsH = (int*) malloc(ParallelCalcs::MAX_PAR_STEPS * moleculeCount * sizeof(int));
+	molBatchH = (int*) malloc(ParallelCalcs::MAX_PAR_STEPS * moleculeCount * sizeof(int));
+	cudaMalloc(&(nbrMolsD), ParallelCalcs::MAX_PAR_STEPS * moleculeCount * sizeof(int));
+	cudaMalloc(&(molBatchD), ParallelCalcs::MAX_PAR_STEPS * moleculeCount * sizeof(int));
+	
+	//upper bound on number of atoms in any molecule
+	maxMolSize = 0;
+	for (int i = 0; i < moleculesH->moleculeCount; i++)
+	{
+		if (moleculesH->numOfAtoms[i] > maxMolSize)
+		{
+			maxMolSize = moleculesH->numOfAtoms[i];
+		}
+	}
+	
+	//energies array on device has one segment for each molecule
+	//where each segment has the maximum number of
+	//possible interatomic energies for one pair of molecules
+	energyCount = ParallelCalcs::MAX_PAR_STEPS * moleculesH->moleculeCount * maxMolSize * maxMolSize;
+	cudaMalloc(&(energiesD), energyCount * sizeof(Real));
+	
+	/***********************************************************************
+		With Parallel Steps
+	***********************************************************************/
 	
 	//initialize energies to 0
 	cudaMemset(energiesD, 0, energyCount * sizeof(Real));
@@ -130,4 +277,21 @@ void ParallelBox::writeChangeToDevice(int changeIdx)
 	cudaMemcpy(yD + startIdx, atomsH->y + startIdx, moleculesH->numOfAtoms[changeIdx] * sizeof(Real), cudaMemcpyHostToDevice);
 	cudaMemcpy(zD + startIdx, atomsH->z + startIdx, moleculesH->numOfAtoms[changeIdx] * sizeof(Real), cudaMemcpyHostToDevice);
 	//sigma, epsilon, and charge will not change, so there is no need to update those arrays
+}
+
+bool ParallelBox::changedMolsWithinCutoff(int mol1, int mol2)
+{
+	Atom atom1 = molecules[changedIndices[mol1]].atoms[enviro->primaryAtomIndex];
+	Atom atom2 = molecules[changedIndices[mol2]].atoms[enviro->primaryAtomIndex];
+		
+	//calculate periodic difference in coordinates
+	Real deltaX = makePeriodic(atom1.x - atom2.x, enviro->x);
+	Real deltaY = makePeriodic(atom1.y - atom2.y, enviro->y);
+	Real deltaZ = makePeriodic(atom1.z - atom2.z, enviro->z);
+	
+	Real r2 = (deltaX * deltaX) +
+				(deltaY * deltaY) + 
+				(deltaZ * deltaZ);
+	
+	return r2 < enviro->cutoff * enviro->cutoff;
 }

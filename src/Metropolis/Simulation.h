@@ -4,10 +4,6 @@
 
 	Author: Nathan Coleman
 	Created: February 21, 2014
-	
-	-> February 26, by Albert Wallace
-	-> March 28, by Joshua Mosby
-	-> April 21, by Nathan Coleman
 */
 
 #ifndef SIMULATION_H
@@ -33,7 +29,8 @@ class Simulation
 		long simSteps;
 		long stepStart;
 
-		void saveState(const std::string& simName, int simStep);
+		void saveState(int simStep);
+		void saveResults(Real systemEnergy, double diffTime, int accepted, int rejected);
 		const std::string currentDateTime();
 };
 

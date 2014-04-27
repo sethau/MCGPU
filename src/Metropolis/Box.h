@@ -1,13 +1,6 @@
 /*
 	Represents a simulation box, holding environment and molecule data.
 	Superclass to SerialBox and ParallelBox.
-
-	Author: Nathan Coleman
-	Created: February 21, 2014
-	
-	-> February 26, by Albert Wallace
-	-> March 28, by Joshua Mosby
-	-> April 21, by Nathan Coleman
 */
 
 #ifndef BOX_H
@@ -74,7 +67,7 @@ class Box
 		
 		/// Saves the unchanged version of a molecule to be changed.
 		/// @param molIdx The index of the molecule to be saved.
-		void saveChangedMol(int molIdx);
+		virtual void saveChangedMol(int molIdx);
 		
 		/// Copies the data of one molecule to another.
 		/// @param mol_dst A pointer to the destination molecule.
