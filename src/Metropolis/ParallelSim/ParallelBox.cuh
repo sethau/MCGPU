@@ -51,7 +51,7 @@ class ParallelBox : public Box
 		///   batch, the batch is stopped before duplicate insertion,
 		///   and the duplicate is stored to be inserted first into
 		///   the next batch.
-		void chooseMolecules(const int N);
+		int chooseMolecules(const int N);
 		
 		/// Changes all chosen molecules in a random way.
 		///   Also saves the backups in changedMols.
@@ -67,7 +67,7 @@ class ParallelBox : public Box
 		/// Deletes the atom, bond, dihedral, angle, and hop arrays
 		///   of a given Molecule.
 		/// @param mol A pointer to the Molecule.
-		void deleteMolMemberArrays(Molecule *mol, Molecule *sourceMol);
+		void deleteMolMemberArrays(Molecule *mol);
 		
 		/// Given two indices in the changedIndices array,
 		///   check the distance against the cutoff.

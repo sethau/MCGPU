@@ -77,7 +77,7 @@ void Simulation::runParallelSteps()
 	
 	std::cout << std::endl << "Running " << simSteps << " steps" << std::endl << std::endl;
 	
-	ParallelCalcs::runParallelSteps(simSteps, box, &systemEnergy, &accepted, &rejected);
+	ParallelCalcs::runParallelSteps(simSteps, box, systemEnergy, accepted, rejected);
 	
 	/*int move = stepStart, stepsUntilNextBreak;
 	while (move < stepStart + simSteps)
@@ -122,6 +122,11 @@ void Simulation::runParallelSteps()
 //Utility
 void Simulation::run()
 {
+	if (args.simulationMode == SimulationMode::Parallel)
+	{
+		runParallelSteps();
+		return;
+	}
 	std::cout << "Simulation Name: " << args.simulationName << std::endl;
 	//declare variables common to both parallel and serial
 	Molecule *molecules = box->getMolecules();
@@ -246,18 +251,17 @@ void Simulation::saveState(int simStep)
 	std::cout << std::endl;
 	
 	//determine where we want the state file to go
-	std::string baseStateFile;	
+	std::string stateOutputPath;	
 	if (!args.simulationName.empty())
 	{
-		baseStateFile = args.simulationName;
+		stateOutputPath = args.simulationName;
 	}
 	else
 	{
-		baseStateFile = "untitled";
+		stateOutputPath = "untitled";
 	}
 	
 	StateScanner statescan = StateScanner("");
-	std::string stateOutputPath = baseFileName;
 	std::string stepCount;
 
 	if (!toString<int>(simStep, stepCount))

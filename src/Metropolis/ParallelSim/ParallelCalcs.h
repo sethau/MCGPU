@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <cstdlib>
 #include <math.h>
 #include <string>
 #include "Metropolis/Box.h"
@@ -17,6 +18,8 @@
 
 namespace ParallelCalcs
 {
+	const double kBoltz = 0.00198717;
+	
 	/// Factory method for creating a Box from a configuration file.
 	/// @param configpath The path to the configuration file.
 	/// @param steps The number of steps desired in the simulation,
@@ -30,7 +33,7 @@ namespace ParallelCalcs
 	///   method closely mirrors Simulation::run(), it needs access
 	///   to methods specific to ParallelBox, which cannot be included
 	///   in the cpp-restricted Simulation class.
-	Real runParallelSteps();
+	void runParallelSteps(int simSteps, Box *box, Real &systemEnergy, int &accepted, int &rejected);
 	
 	/// Calculates the system energy using consecutive calls to
 	///   calcMolecularEnergyContribution.

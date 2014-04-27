@@ -28,7 +28,8 @@ class Simulation
 		SimulationArgs args;
 		long simSteps;
 		long stepStart;
-
+		
+		void runParallelSteps();
 		void saveState(int simStep);
 		void saveResults(Real systemEnergy, double diffTime, int accepted, int rejected);
 		const std::string currentDateTime();

@@ -5,6 +5,7 @@
 
 #include "ParallelBox.cuh"
 #include "ParallelCalcs.cuh"
+#include "Metropolis/SerialSim/SerialCalcs.h"
 
 using namespace std;
 
@@ -119,7 +120,7 @@ void ParallelBox::toggleChange(int changeIdx)
 {
 	//create temporary copy of backup Molecule
 	Molecule *backupMol = (Molecule*) malloc(sizeof(Molecule));
-	createMolMemberArrays(backupMol, changedMols[changeIdx]);
+	createMolMemberArrays(backupMol, changedMols + changeIdx);
 	copyMolecule(backupMol, changedMols + changeIdx);
 	
 	//save working copy
@@ -281,17 +282,17 @@ void ParallelBox::writeChangeToDevice(int changeIdx)
 
 bool ParallelBox::changedMolsWithinCutoff(int mol1, int mol2)
 {
-	Atom atom1 = molecules[changedIndices[mol1]].atoms[enviro->primaryAtomIndex];
-	Atom atom2 = molecules[changedIndices[mol2]].atoms[enviro->primaryAtomIndex];
+	Atom atom1 = molecules[changedIndices[mol1]].atoms[environment->primaryAtomIndex];
+	Atom atom2 = molecules[changedIndices[mol2]].atoms[environment->primaryAtomIndex];
 		
 	//calculate periodic difference in coordinates
-	Real deltaX = makePeriodic(atom1.x - atom2.x, enviro->x);
-	Real deltaY = makePeriodic(atom1.y - atom2.y, enviro->y);
-	Real deltaZ = makePeriodic(atom1.z - atom2.z, enviro->z);
+	Real deltaX = SerialCalcs::makePeriodic(atom1.x - atom2.x, environment->x);
+	Real deltaY = SerialCalcs::makePeriodic(atom1.y - atom2.y, environment->y);
+	Real deltaZ = SerialCalcs::makePeriodic(atom1.z - atom2.z, environment->z);
 	
 	Real r2 = (deltaX * deltaX) +
 				(deltaY * deltaY) + 
 				(deltaZ * deltaZ);
 	
-	return r2 < enviro->cutoff * enviro->cutoff;
+	return r2 < environment->cutoff * environment->cutoff;
 }

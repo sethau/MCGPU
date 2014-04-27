@@ -9,6 +9,7 @@
 #include "Metropolis/Utilities/FileUtilities.h"
 #include "Metropolis/Box.h"
 #include "Metropolis/SimulationArgs.h"
+#include "Metropolis/SerialSim/SerialCalcs.h"
 
 #define NO -1
 #define MAX_WARP 32
@@ -38,7 +39,7 @@ Box* ParallelCalcs::createBox(string inputPath, InputFileType inputType, long* s
 	return (Box*) box;
 }
 
-void Simulation::runParallelSteps(int simSteps, Box *box, Real &systemEnergy, int &accepted, int &rejected)
+void ParallelCalcs::runParallelSteps(int simSteps, Box *box, Real &systemEnergy, int &accepted, int &rejected)
 {
 	ParallelBox *pBox = (ParallelBox*) box;
 	
@@ -48,7 +49,7 @@ void Simulation::runParallelSteps(int simSteps, Box *box, Real &systemEnergy, in
 		Environment *enviro = pBox->getEnvironment();
 		
 		Real *oldEnergyConts, *newEnergyConts, wrongE, rightE;
-		Real  kT = kBoltz * enviro->temp;
+		Real  kT = ParallelCalcs::kBoltz * enviro->temp;
 		bool accept;
 		
 		//calculate old energy
@@ -86,7 +87,7 @@ void Simulation::runParallelSteps(int simSteps, Box *box, Real &systemEnergy, in
 				}
 				else
 				{
-					if(exp(-(newEnergyConts[mol1] - oldEnergyConts[mol1]) / kT >= randomReal(0.0, 1.0))
+					if(exp(-(newEnergyConts[mol1] - oldEnergyConts[mol1])) / kT >= randomReal(0.0, 1.0))
 					{
 						accept = true;
 					}
@@ -146,10 +147,10 @@ Real ParallelCalcs::calcSystemEnergy(Box *box)
     return totalEnergy;
 }
 
-Real* ParallelCalcs::calcMolecularEnergyContributions(ParallelBox pBox)
+Real* ParallelCalcs::calcMolecularEnergyContributions(ParallelBox *pBox)
 {
 	int i, N = pBox->numChanged;
-	cudaStream_t streams[] = new cudaStream_t[N];
+	cudaStream_t streams[N];
 	
 	for (i = 0; i < N; i++)
 	{
@@ -162,7 +163,7 @@ Real* ParallelCalcs::calcMolecularEnergyContributions(ParallelBox pBox)
 	//check molecule distances in parallel, conditionally filling in pBox->nbrMolsD
 	for (i = 0; i < N; i++)
 	{
-		checkMoleculeDistances<<<pBox->moleculeCount / MOL_BLOCK + 1, MOL_BLOCK, streams[i]>>>(pBox->moleculesD, pBox->atomsD, pBox->changedIndices[i], 0, pBox->environmentD, pBox->nbrMolsD + pBox->moleculeCount * i);
+		checkMoleculeDistances<<<pBox->moleculeCount / MOL_BLOCK + 1, MOL_BLOCK, 0, streams[i]>>>(pBox->moleculesD, pBox->atomsD, pBox->changedIndices[i], 0, pBox->environmentD, pBox->nbrMolsD + pBox->moleculeCount * i);
 	}
 	
 	//get sparse neighbor list
@@ -175,7 +176,7 @@ Real* ParallelCalcs::calcMolecularEnergyContributions(ParallelBox pBox)
 	//NOTE: It is possible that this can be done more efficiently on the GPU, without ever involving the CPU.
 	//      We tested the thrust library's implementation (included with Cuda), but it was slower than using the CPU.
 	//      Perhaps look into writing our own Parallel Stream Compaction kernel? (Looking at you, future group!)
-	int batchSizes[] = new int[N], j;
+	int batchSizes[N], j;
 	for (i = 0; i < N; i++)
 	{
 		batchSizes[i] = 0;
@@ -197,15 +198,15 @@ Real* ParallelCalcs::calcMolecularEnergyContributions(ParallelBox pBox)
 	cudaMemcpy(pBox->molBatchD, pBox->molBatchH, N * pBox->moleculeCount * sizeof(int), cudaMemcpyHostToDevice);
 
 	//There will only be as many energy segments filled in as there are molecules in the batch.
-	int validEnergies[] = new int[N], segmentSize = pBox->moleculeCount * pBox->maxMolSize * pBox->maxMolSize;
-	Real contributions* = (Real*) malloc(N * sizeof(Real));
+	int validEnergies[N], segmentSize = pBox->moleculeCount * pBox->maxMolSize * pBox->maxMolSize;
+	Real *contributions = (Real*) malloc(N * sizeof(Real));
 	
 	for (i = 0; i < N; i++)
 	{
 		validEnergies[i] = batchSizes[i] * pBox->maxMolSize * pBox->maxMolSize;
 				
 		//calculate interatomic energies between changed molecule and all molecules in batch
-		calcInterAtomicEnergy<<<validEnergies / BATCH_BLOCK + 1, BATCH_BLOCK, streams[i]>>>
+		calcInterAtomicEnergy<<<validEnergies[i] / BATCH_BLOCK + 1, BATCH_BLOCK, 0, streams[i]>>>
 		(pBox->moleculesD, pBox->atomsD, pBox->changedIndices[i], pBox->environmentD, pBox->energiesD + i * segmentSize, validEnergies[i], pBox->molBatchD + i * pBox->moleculeCount, pBox->maxMolSize);
 	}
 	
@@ -223,18 +224,18 @@ Real* ParallelCalcs::calcMolecularEnergyContributions(ParallelBox pBox)
 			}
 			
 			//do the next aggregation pass
-			aggregateEnergies<<<numBaseThreads / (i * blockSize) + 1, blockSize, streams[i]>>>
-			(box->energiesD + i * segmentSize, validEnergies[i], i, batchSize);
+			aggregateEnergies<<<numBaseThreads / (i * blockSize) + 1, blockSize, 0, streams[i]>>>
+			(pBox->energiesD + i * segmentSize, validEnergies[i], i, batchSize);
 		}
 	}
 	
 	for (i = 0; i < N; i++)
 	{
-		//the total energy will be stored in the first index of box->energiesD
-		cudaMemcpy(&(contributions[i]), box->energiesD + i * segmentSize, sizeof(Real), cudaMemcpyDeviceToHost);
+		//the total energy will be stored in the first index of pBox->energiesD
+		cudaMemcpy(&(contributions[i]), pBox->energiesD + i * segmentSize, sizeof(Real), cudaMemcpyDeviceToHost);
 		
 		//reset final energy to 0, resulting in a clear energies array for the next calculation
-		cudaMemset(box->energiesD + i * segmentSize, 0, sizeof(Real));
+		cudaMemset(pBox->energiesD + i * segmentSize, 0, sizeof(Real));
 	}
 	
 	return contributions;

@@ -19,7 +19,7 @@ namespace ParallelCalcs
 	/// @param pBox A pointer to the ParallelBox with changed
 	///   molecules already chosen and changed.
 	/// @return Returns a pointer to the array of energy contributions.
-	Real* calcMolecularEnergyContributions(ParallelBox pBox);
+	Real* calcMolecularEnergyContributions(ParallelBox *pBox);
 	
 	/// Creates a batch of molecule IDs within the cutoff distance of
 	///   the chosen molecule, and returns the batch size.
