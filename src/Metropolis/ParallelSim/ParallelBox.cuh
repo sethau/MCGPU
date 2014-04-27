@@ -29,6 +29,8 @@ class ParallelBox : public Box
 		void writeChangeToDevice(int changeIdx);
 
 	public:
+		int *changedIndices, numChanged;
+		Molecule *changedMols;
 		AtomData *atomsH, *atomsD;
 		Environment *environmentD;
 		MoleculeData *moleculesH, *moleculesD;
@@ -38,6 +40,28 @@ class ParallelBox : public Box
 		
 		ParallelBox();
 		~ParallelBox();
+		
+		/// Chooses N random molecules to be changed for a given
+		///   batch of parallel simulation steps.
+		/// @param N The number of molecules to be chosen.
+		void chooseMolecules(int N);
+		
+		/// Changes all changed molecules in a random way.
+		void changeMolecules();
+		
+		/// Given two indices in the changedIndices array,
+		///   check the distance against the cutoff.
+		/// @param mol1 The first index.
+		/// @param mol2 The second index.
+		/// @return Returns true if the molecules are within
+		///   the cutoff distance of each other.
+		bool changedMolsWithinCutoff(int mol1, int mol2);
+		
+		/// Given one index in the changedIndices array,
+		///   toggle the status of the molecule between
+		///   changed and rolled-back, using the backups.
+		/// @param molIdx The index to be toggled.
+		void toggleChange(int molIdx);
 		
 		/// Changes a specified molecule in a random way.
 		///   This method overrides the virtual method of the

@@ -30,6 +30,12 @@ namespace ParallelCalcs
 	///   TODO for future group.
 	Box* createBox(std::string inputPath, InputFileType inputType, long* startStep, long* steps);
 	
+	/// Runs the simulation using step parallelism. Although this
+	///   method closely mirrors Simulation::run(), it needs access
+	///   to methods specific to ParallelBox, which cannot be included
+	///   in the cpp-restricted Simulation class.
+	Real runParallelSteps();
+	
 	/// Calculates the system energy using consecutive calls to
 	///   calcMolecularEnergyContribution.
 	/// @param box A ParallelBox cast as a Box, passed from Simulation.
