@@ -55,27 +55,31 @@ void ParallelCalcs::runParallelSteps(int simSteps, Box *box, Real &systemEnergy,
 		//calculate old energy
 		if (systemEnergy == 0)
 		{
+			//cout << "ParallelCalcs: Recalculating system energy\r\n";
 			systemEnergy = ParallelCalcs::calcSystemEnergy(box);
 		}
-		
+		//cout << "ParallelCalcs: Beginning steps\r\n";
 		int move = 0, stepsTaken;
+		cout << "Step " << move << "\r\n--Current Energy: " << systemEnergy << endl;
 		while (move < simSteps)
 		{
-			if (move + ParallelCalcs::MAX_PAR_STEPS > simSteps)
+			if (move + ParallelCalcs::MAX_PAR_STEPS <= simSteps)
 			{
-				stepsTaken = pBox->chooseMolecules(simSteps - move);
+				//cout << "ParallelCalcs: Choosing molecules 1\r\n";
+				stepsTaken = pBox->chooseMolecules(ParallelCalcs::MAX_PAR_STEPS);
 			}
 			else
 			{
-				stepsTaken = pBox->chooseMolecules(ParallelCalcs::MAX_PAR_STEPS);
+				//cout << "ParallelCalcs: Choosing molecules 2\r\n";
+				stepsTaken = pBox->chooseMolecules(simSteps - move);
 			}
-			
+			//cout << "ParallelCalcs: Calculating pre-change contribution\r\n";
 			oldEnergyConts = ParallelCalcs::calcMolecularEnergyContributions(pBox);
-			
+			//cout << "ParallelCalcs: Changing molecules 2\r\n";
 			//TODO: pBox->changeMolecules should clear and then change the
 			//molecules currently specified by pBox->changedIndices.
 			pBox->changeMolecules();
-			
+			//cout << "ParallelCalcs: Calculating post-change contribution\r\n";
 			newEnergyConts = ParallelCalcs::calcMolecularEnergyContributions(pBox);
 			
 			for (int mol1 = 0; mol1 < stepsTaken; mol1++)
@@ -85,18 +89,19 @@ void ParallelCalcs::runParallelSteps(int simSteps, Box *box, Real &systemEnergy,
 				{
 					accept = true;
 				}
-				else
+				else if(exp(-(newEnergyConts[mol1] - oldEnergyConts[mol1]) / kT) >= randomReal(0.0, 1.0))
 				{
-					if(exp(-(newEnergyConts[mol1] - oldEnergyConts[mol1])) / kT >= randomReal(0.0, 1.0))
-					{
 						accept = true;
-					}
 				}
 				
 				if (accept)
 				{
 					accepted++;
 					systemEnergy += newEnergyConts[mol1] - oldEnergyConts[mol1];
+					cout << "Step " << move + mol1 + 1 << "\r\n--Current Energy: " << systemEnergy << endl;
+					cout << "Changed Molecule: " << pBox->changedIndices[mol1] << endl;
+					cout << "Pre-change contribution: " << oldEnergyConts[mol1] << endl;
+					cout << "Pre-change contribution: " << newEnergyConts[mol1] << endl;
 					for (int mol2 = mol1 + 1; mol2 < stepsTaken; mol2++)
 					{
 						if (pBox->changedMolsWithinCutoff(mol1, mol2))
@@ -114,6 +119,10 @@ void ParallelCalcs::runParallelSteps(int simSteps, Box *box, Real &systemEnergy,
 				else
 				{
 					rejected++;
+					cout << "Step Rejected" << move + mol1 << "\r\n--Current Energy: " << systemEnergy << endl;
+					cout << "Changed Molecule: " << pBox->changedIndices[mol1] << endl;
+					cout << "Pre-change contribution: " << oldEnergyConts[mol1] << endl;
+					cout << "Pre-change contribution: " << newEnergyConts[mol1] << endl;
 					for (int mol2 = mol1 + 1; mol2 < stepsTaken; mol2++)
 					{
 						if (pBox->changedMolsWithinCutoff(mol1, mol2))
@@ -151,7 +160,7 @@ Real* ParallelCalcs::calcMolecularEnergyContributions(ParallelBox *pBox)
 {
 	int i, N = pBox->numChanged;
 	cudaStream_t streams[N];
-	
+	//cout << "ParallelCalcs.calcConts: Initializing Streams\r\n";
 	for (i = 0; i < N; i++)
 	{
 		cudaStreamCreate(&(streams[i]));
@@ -159,19 +168,19 @@ Real* ParallelCalcs::calcMolecularEnergyContributions(ParallelBox *pBox)
 	
 	//initialize neighbor molecule slots to NO
 	cudaMemset(pBox->nbrMolsD, NO, pBox->moleculeCount * sizeof(int));
-	
+	//cout << "ParallelCalcs.calcConts: Checking Molecule Distances\r\n";
 	//check molecule distances in parallel, conditionally filling in pBox->nbrMolsD
 	for (i = 0; i < N; i++)
 	{
 		checkMoleculeDistances<<<pBox->moleculeCount / MOL_BLOCK + 1, MOL_BLOCK, 0, streams[i]>>>(pBox->moleculesD, pBox->atomsD, pBox->changedIndices[i], 0, pBox->environmentD, pBox->nbrMolsD + pBox->moleculeCount * i);
 	}
-	
+	//cout << "ParallelCalcs.calcConts: Kernels all called and running\r\n";
 	//get sparse neighbor list
 	cudaMemcpy(pBox->nbrMolsH, pBox->nbrMolsD, N * pBox->moleculeCount * sizeof(int), cudaMemcpyDeviceToHost);
-	
+	//cout << "ParallelCalcs.calcConts: Kernels returned and sparse list copied back\r\n";
 	//innitialize neighbor batch to NO
 	memset(pBox->molBatchH, NO, N * pBox->moleculeCount * sizeof(int));
-	
+	//cout << "ParallelCalcs.calcConts: Performing stream compaction\r\n";
 	//sparse list compaction to create batch of valid neighbor molecules to send to GPU
 	//NOTE: It is possible that this can be done more efficiently on the GPU, without ever involving the CPU.
 	//      We tested the thrust library's implementation (included with Cuda), but it was slower than using the CPU.
@@ -193,14 +202,14 @@ Real* ParallelCalcs::calcMolecularEnergyContributions(ParallelBox *pBox)
 	//All other energies will have been reset from the previous aggregation run.
 	//Technically, this should already be 0, but this is a safeguard against implementation changes.
 	cudaMemset(pBox->energiesD, 0, sizeof(Real));
-	
+	//cout << "ParallelCalcs.calcConts: Copying neighbor list to device\r\n";
 	//copy neighbor batch to device
 	cudaMemcpy(pBox->molBatchD, pBox->molBatchH, N * pBox->moleculeCount * sizeof(int), cudaMemcpyHostToDevice);
 
 	//There will only be as many energy segments filled in as there are molecules in the batch.
 	int validEnergies[N], segmentSize = pBox->moleculeCount * pBox->maxMolSize * pBox->maxMolSize;
 	Real *contributions = (Real*) malloc(N * sizeof(Real));
-	
+	//cout << "ParallelCalcs.calcConts: calculating energies\r\n";
 	for (i = 0; i < N; i++)
 	{
 		validEnergies[i] = batchSizes[i] * pBox->maxMolSize * pBox->maxMolSize;
@@ -209,35 +218,39 @@ Real* ParallelCalcs::calcMolecularEnergyContributions(ParallelBox *pBox)
 		calcInterAtomicEnergy<<<validEnergies[i] / BATCH_BLOCK + 1, BATCH_BLOCK, 0, streams[i]>>>
 		(pBox->moleculesD, pBox->atomsD, pBox->changedIndices[i], pBox->environmentD, pBox->energiesD + i * segmentSize, validEnergies[i], pBox->molBatchD + i * pBox->moleculeCount, pBox->maxMolSize);
 	}
-	
+	//cout << "ParallelCalcs.calcConts: All energy calculation kernels called and running\r\n";
+	//cout << "ParallelCalcs.calcConts: Aggregating energies\r\n";
 	for (i = 0; i < N; i++)
 	{
+		//cout << "ParallelCalcs.calcConts.energyAgg: Beginning single-step energy agg\r\n";
 		//a batch size of 3 seems to offer the best tradeoff between parallelization and locality
 		int batchSize = 3, blockSize = AGG_BLOCK;
 		int numBaseThreads = validEnergies[i] / (batchSize);
-		for (int i = 1; i < validEnergies[i]; i *= batchSize)
+		for (int interval = 1; interval < validEnergies[i]; interval *= batchSize)
 		{
 			//there is no need for giant blocks when only a few threads are being run
-			if (blockSize > MAX_WARP && numBaseThreads / i + 1 < blockSize)
+			if (blockSize > MAX_WARP && numBaseThreads / interval + 1 < blockSize)
 			{
 				blockSize /= 2;
 			}
-			
+			//cout << "ParallelCalcs.calcConts.energyAgg: calling aggregation kernel\r\n";
 			//do the next aggregation pass
-			aggregateEnergies<<<numBaseThreads / (i * blockSize) + 1, blockSize, 0, streams[i]>>>
-			(pBox->energiesD + i * segmentSize, validEnergies[i], i, batchSize);
+			aggregateEnergies<<<numBaseThreads / (interval * blockSize) + 1, blockSize, 0, streams[i]>>>
+			(pBox->energiesD + i * segmentSize, validEnergies[i], interval, batchSize);
 		}
 	}
-	
+	//cout << "ParallelCalcs.calcConts: Energy aggregation kernels called and running\r\n";
 	for (i = 0; i < N; i++)
 	{
+		//cout << "ParallelCalcs.calcConts.energyCpy: copying energies\r\n";
 		//the total energy will be stored in the first index of pBox->energiesD
 		cudaMemcpy(&(contributions[i]), pBox->energiesD + i * segmentSize, sizeof(Real), cudaMemcpyDeviceToHost);
-		
+		//cout << "ParallelCalcs.calcConts.energyCpy: Energies copied\r\n";
+		//cout << "ParallelCalcs.calcConts.energyCpy: Resetting final energy\r\n";
 		//reset final energy to 0, resulting in a clear energies array for the next calculation
 		cudaMemset(pBox->energiesD + i * segmentSize, 0, sizeof(Real));
 	}
-	
+	//cout << "ParallelCalcs.calcConts: Energies copied back\r\n";
 	return contributions;
 }
 

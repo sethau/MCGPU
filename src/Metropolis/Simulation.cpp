@@ -159,7 +159,7 @@ void Simulation::run()
 	{
 		if (args.statusInterval > 0 && (move - stepStart) % args.statusInterval == 0)
 		{
-			std::cout << "Step " << move << ":\n--Current Energy: " << systemEnergy << std::endl;	
+			std::cout << "Step " << move << ":\n--Current Energy: " << systemEnergy << std::endl;
 		}
 		
 		if (args.stateInterval > 0 && move > stepStart && (move - stepStart) % args.stateInterval == 0)
@@ -190,6 +190,11 @@ void Simulation::run()
 		{
 			newEnergyCont = SerialCalcs::calcMolecularEnergyContribution(molecules, enviro, changeIdx);
 		}
+		
+		std::cout << "Changed Molecule: " << changeIdx << std::endl;
+		std::cout << "Pre-change contribution: " << oldEnergyCont << std::endl;
+		std::cout << "Pre-change contribution: " << newEnergyCont << std::endl;	
+
 		
 		bool accept = false;
 		
@@ -228,7 +233,6 @@ void Simulation::run()
     double diffTime = difftime(endTime, startTime) / CLOCKS_PER_SEC;
 
 	std::cout << "Step " << (stepStart + simSteps) << ":\r\n--Current Energy: " << systemEnergy << std::endl;
-	systemEnergy = systemEnergy;
 
 	// Save the final state of the simulation
 	if (args.stateInterval >= 0)

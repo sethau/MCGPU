@@ -12,7 +12,7 @@
 
 namespace ParallelCalcs
 {
-	const static int MAX_PAR_STEPS = 8;
+	const static int MAX_PAR_STEPS = 1;
 	
 	/// Calculates the molecular energy contributions for each
 	///   changed molecule in pBox.
